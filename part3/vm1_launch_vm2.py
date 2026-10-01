@@ -1,13 +1,34 @@
 #!/usr/bin/env python3
 
+import os
 import time
 
 import googleapiclient.discovery
 import google.oauth2.service_account as service_account
 
 ZONE = 'us-west1-b'
-INSTANCE_NAME = 'vm1-launcher-instance'
+INSTANCE_NAME = 'flask-vm2-instance'
 MACHINE_TYPE = 'e2-medium'
+
+flask_startup_script = """#!/bin/bash
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
+apt-get update
+apt-get install -y python3 python3-pip git
+
+cd /home
+git clone https://github.com/cu-csci-4253-datacenter/flask-tutorial
+cd flask-tutorial
+
+python3 setup.py install
+pip3 install -e .
+
+export FLASK_APP=flaskr
+flask init-db
+
+nohup flask run -h 0.0.0.0 &
+"""
 
 
 def wait_for_operation(compute, project, operation_name, zone=None):
@@ -27,8 +48,7 @@ def wait_for_operation(compute, project, operation_name, zone=None):
         time.sleep(2)
 
 
-def create_vm1(compute, project, zone, name, machine_type,
-                vm1_startup_script, vm1_launch_vm2_code, service_credentials_json):
+def create_instance(compute, project, zone, name, startup_script, machine_type):
     image_response = compute.images().getFromFamily(
         project='ubuntu-os-cloud', family='ubuntu-2204-lts'
     ).execute()
@@ -37,6 +57,7 @@ def create_vm1(compute, project, zone, name, machine_type,
     config = {
         'name': name,
         'machineType': f"zones/{zone}/machineTypes/{machine_type}",
+        'tags': {'items': ['allow-5000']},
         'disks': [{
             'boot': True,
             'autoDelete': True,
@@ -47,11 +68,7 @@ def create_vm1(compute, project, zone, name, machine_type,
             'accessConfigs': [{'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}]
         }],
         'metadata': {
-            'items': [
-                {'key': 'startup-script', 'value': vm1_startup_script},
-                {'key': 'vm1-launch-vm2-code', 'value': vm1_launch_vm2_code},
-                {'key': 'service-credentials', 'value': service_credentials_json},
-            ]
+            'items': [{'key': 'startup-script', 'value': startup_script}]
         }
     }
 
@@ -60,29 +77,21 @@ def create_vm1(compute, project, zone, name, machine_type,
 
 def main():
     credentials = service_account.Credentials.from_service_account_file(
-        filename='service-credentials.json'
+        filename='/srv/service-credentials.json'
     )
     project = credentials.project_id
     compute = googleapiclient.discovery.build('compute', 'v1', credentials=credentials)
 
-    with open('vm1_startup_script.sh') as f:
-        vm1_startup_script = f.read()
-
-    with open('vm1_launch_vm2.py') as f:
-        vm1_launch_vm2_code = f.read()
-
-    with open('service-credentials.json') as f:
-        service_credentials_json = f.read()
-
-    print(f"Creating VM-1 ('{INSTANCE_NAME}')...")
-    operation = create_vm1(
-        compute, project, ZONE, INSTANCE_NAME, MACHINE_TYPE,
-        vm1_startup_script, vm1_launch_vm2_code, service_credentials_json
-    )
+    print(f"Creating VM-2 ('{INSTANCE_NAME}') using service account credentials...")
+    operation = create_instance(compute, project, ZONE, INSTANCE_NAME, flask_startup_script, MACHINE_TYPE)
     wait_for_operation(compute, project, operation['name'], zone=ZONE)
 
-    print(f"VM-1 created. It will now launch VM-2 automatically via its startup script.")
-    print(f"SSH into {INSTANCE_NAME} and check /srv/vm1_launch_vm2.log to confirm VM-2 was created.")
+    instance_info = compute.instances().get(
+        project=project, zone=ZONE, instance=INSTANCE_NAME
+    ).execute()
+    external_ip = instance_info['networkInterfaces'][0]['accessConfigs'][0]['natIP']
+
+    print(f"\nVM-2 created. Flask application should be available at:\nhttp://{external_ip}:5000\n")
 
 
 if __name__ == '__main__':
