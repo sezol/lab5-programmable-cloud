@@ -406,3 +406,20 @@ Google Cloud service
 ```
 
 The second approach allows cloud resources and applications to be created and configured automatically, repeatably, and as part of a larger software system.
+
+
+
+## Note on Machine Type
+
+The assignment recommends using `f1-micro` for the final program. During development
+and testing, VM creation requests using `f1-micro` in the `us-west1-b` zone
+consistently failed with a `ZONE_RESOURCE_POOL_EXHAUSTED` error:
+
+> A f1-micro VM instance is currently unavailable in the us-west1-b zone.
+
+This was reproduced on multiple separate attempts, at different times, so it reflects
+a persistent capacity constraint in that zone rather than a transient issue. As a
+result, this program uses `e2-medium` as the machine type instead, which is within
+the "e2 family" explicitly permitted as an alternative by the assignment instructions.
+All other requirements (zone, OS image, network, firewall rule, startup script
+behavior) remain exactly as specified.
