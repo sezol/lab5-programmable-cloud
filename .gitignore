@@ -1,0 +1,10 @@
+# Service account credentials - NEVER commit these
+service-credentials.json
+*.json
+
+# Python
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
